@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import payData from "./payscales.json";
 
 const PAY_SCALES = payData.scales;
@@ -24,6 +24,13 @@ function getDayOfYear(date) {
   return Math.round((date - jan1) / MS_PER_DAY);
 }
 
+// Convert day-of-year index back to a Date
+function dayIndexToDate(dayIdx, year) {
+  const d = new Date(year, 0, 1);
+  d.setDate(d.getDate() + dayIdx);
+  return d;
+}
+
 // Days in a year (365 or 366)
 function daysInYear(year) {
   return (new Date(year, 1, 29).getMonth() === 1) ? 366 : 365;
@@ -34,19 +41,23 @@ function fmtDate(d) {
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
+// Format a date as "Thu 12 Feb 2026"
+function fmtDateFull(d) {
+  return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_FULL[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 // Get all fortnightly pay dates for a given year, anchored to Feb 12, 2026
 function getFortnightlyPayDates(year) {
   const dates = [];
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year, 11, 31);
 
-  // Find first fortnightly date on or after yearStart
   const diffMs = yearStart.getTime() - FORTNIGHTLY_ANCHOR.getTime();
   const diffDays = Math.round(diffMs / MS_PER_DAY);
 
   let n;
   if (diffDays <= 0) {
-    n = 0; // anchor is after or on yearStart
+    n = 0;
   } else {
     n = Math.ceil(diffDays / 14);
   }
@@ -69,12 +80,10 @@ function getMonthlyPayDates(year) {
   for (let m = 0; m < 12; m++) {
     let d;
     if (m === 11) {
-      // December: last Friday before Dec 25
       d = new Date(year, 11, 24);
       while (d.getDay() !== 5) d.setDate(d.getDate() - 1);
     } else {
-      // Last Friday of the month
-      d = new Date(year, m + 1, 0); // last day of month
+      d = new Date(year, m + 1, 0);
       while (d.getDay() !== 5) d.setDate(d.getDate() - 1);
     }
     dates.push(d);
@@ -82,17 +91,51 @@ function getMonthlyPayDates(year) {
   return dates;
 }
 
-// Pre-compute fortnightly pay counts per year for the 26/27 indicator
+// Pre-compute fortnightly pay counts per year
 function getYearPaydayCounts() {
   const counts = {};
   for (const y of YEAR_RANGE) {
-    const dates = getFortnightlyPayDates(y);
-    counts[y] = dates.length;
+    counts[y] = getFortnightlyPayDates(y).length;
   }
   return counts;
 }
 
 const YEAR_PAYDAY_COUNTS = getYearPaydayCounts();
+
+// Compute cumulative accumulation arrays for the year
+function computeAccumulation(totalDays, monthlyDates, fortnightlyDates, monthly, fortnightly) {
+  const monthlyPayDays = new Set(monthlyDates.map(d => getDayOfYear(d)));
+  const fnPayDays = new Set(fortnightlyDates.map(d => getDayOfYear(d)));
+
+  const monthlyAccum = [];
+  const fnAccum = [];
+  let mTotal = 0;
+  let fTotal = 0;
+
+  const monthlyDots = [];
+  const fnDots = [];
+
+  for (let d = 0; d <= totalDays; d++) {
+    if (monthlyPayDays.has(d)) {
+      mTotal += monthly;
+      monthlyDots.push({ day: d, total: mTotal });
+    }
+    monthlyAccum.push(mTotal);
+
+    if (fnPayDays.has(d)) {
+      fTotal += fortnightly;
+      fnDots.push({ day: d, total: fTotal });
+    }
+    fnAccum.push(fTotal);
+  }
+
+  return { monthlyAccum, fnAccum, monthlyDots, fnDots };
+}
+
+// Chart padding constants (shared between chart and interaction)
+const CHART_PAD = { top: 30, right: 20, bottom: 35, left: 65 };
+const CHART_W = 700;
+const CHART_H = 300;
 
 function TimelineBar({ payments, color, systemLabel, year }) {
   const totalDays = daysInYear(year);
@@ -116,7 +159,6 @@ function TimelineBar({ payments, color, systemLabel, year }) {
           overflow: "hidden",
           border: "1px solid #2a3a55",
         }}>
-          {/* Month gridlines */}
           {MONTHS.map((m, i) => {
             const dayOfYear = getDayOfYear(new Date(year, i, 1));
             const pct = (dayOfYear / totalDays) * 100;
@@ -131,7 +173,6 @@ function TimelineBar({ payments, color, systemLabel, year }) {
               }} />
             ) : null;
           })}
-          {/* Payment blocks */}
           {payments.map((p, i) => (
             <div
               key={i}
@@ -158,26 +199,74 @@ function TimelineBar({ payments, color, systemLabel, year }) {
   );
 }
 
-function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fortnightlyDates }) {
+function AccumulationChart({ salary, dayIndex, year, totalDays, accum, dailyRate, onDayChange }) {
   const canvasRef = useRef(null);
-  const monthly = salary / 12;
-  const fortnightly = salary / 26.09;
-  const dailyRate = salary / daysInYear(year);
-  const totalDays = daysInYear(year);
+  const isDragging = useRef(false);
+
+  const xToDay = useCallback((clientX) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return 0;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CHART_W / rect.width;
+    const x = (clientX - rect.left) * scaleX;
+    const plotW = CHART_W - CHART_PAD.left - CHART_PAD.right;
+    const day = Math.round(((x - CHART_PAD.left) / plotW) * totalDays);
+    return Math.max(0, Math.min(totalDays, day));
+  }, [totalDays]);
+
+  const handleMouseDown = useCallback((e) => {
+    isDragging.current = true;
+    onDayChange(xToDay(e.clientX));
+  }, [xToDay, onDayChange]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (!isDragging.current) return;
+    onDayChange(xToDay(e.clientX));
+  }, [xToDay, onDayChange]);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  // Touch support
+  const handleTouchStart = useCallback((e) => {
+    isDragging.current = true;
+    onDayChange(xToDay(e.touches[0].clientX));
+  }, [xToDay, onDayChange]);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!isDragging.current) return;
+    e.preventDefault();
+    onDayChange(xToDay(e.touches[0].clientX));
+  }, [xToDay, onDayChange]);
+
+  const handleTouchEnd = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalUp = () => { isDragging.current = false; };
+    window.addEventListener("mouseup", handleGlobalUp);
+    window.addEventListener("touchend", handleGlobalUp);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalUp);
+      window.removeEventListener("touchend", handleGlobalUp);
+    };
+  }, []);
+
+  const { monthlyAccum, fnAccum, monthlyDots, fnDots } = accum;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    const W = canvas.width;
-    const H = canvas.height;
-    const pad = { top: 30, right: 20, bottom: 35, left: 65 };
+    const W = CHART_W;
+    const H = CHART_H;
+    const pad = CHART_PAD;
     const plotW = W - pad.left - pad.right;
     const plotH = H - pad.top - pad.bottom;
 
     ctx.clearRect(0, 0, W, H);
-
-    // Background
     ctx.fillStyle = "#0d1420";
     ctx.fillRect(0, 0, W, H);
 
@@ -225,55 +314,40 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
 
     const maxDay = dayIndex;
 
-    // Build sets of pay day indices
-    const monthlyPayDays = new Set(monthlyDates.map(d => getDayOfYear(d)));
-    const fnPayDays = new Set(fortnightlyDates.map(d => getDayOfYear(d)));
-
-    // For 2026 transition: January was paid monthly, fortnightly starts Feb 12
-    // The fortnightly line shows the actual new system (no Jan payment)
-    // The monthly line shows the old system for comparison
-
-    // Calculate cumulative pay for both systems
-    const monthlyAccum = [];
-    const fnAccum = [];
-    let mTotal = 0;
-    let fTotal = 0;
-
-    // Track pay date positions for dot markers
-    const monthlyDots = [];
-    const fnDots = [];
-
+    // Earned line (dashed)
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
     for (let d = 0; d <= totalDays; d++) {
-      if (monthlyPayDays.has(d)) {
-        mTotal += monthly;
-        monthlyDots.push({ day: d, total: mTotal });
-      }
-      monthlyAccum.push(mTotal);
-
-      if (fnPayDays.has(d)) {
-        fTotal += fortnightly;
-        fnDots.push({ day: d, total: fTotal });
-      }
-      fnAccum.push(fTotal);
+      const x = pad.left + (d / totalDays) * plotW;
+      const y = pad.top + plotH - ((d * dailyRate) / salary) * plotH;
+      if (d === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    // "What you actually earned" line (daily accumulation)
-    const drawEarned = (upToDay) => {
-      ctx.strokeStyle = "rgba(255,255,255,0.15)";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
+    // Draw dimmed full-year lines first (ghost)
+    const drawGhost = (data, color) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.15;
       ctx.beginPath();
-      for (let d = 0; d <= upToDay; d++) {
+      for (let d = 0; d <= totalDays; d++) {
         const x = pad.left + (d / totalDays) * plotW;
-        const y = pad.top + plotH - ((d * dailyRate) / salary) * plotH;
-        if (d === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        const y = pad.top + plotH - (data[d] / salary) * plotH;
+        if (d === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
     };
 
-    // Draw staircase line
+    if (maxDay < totalDays) {
+      drawGhost(monthlyAccum, "#f59e0b");
+      drawGhost(fnAccum, "#22d3ee");
+    }
+
+    // Active staircase lines up to maxDay
     const drawLine = (data, color, upToDay) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
@@ -281,13 +355,11 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
       for (let d = 0; d <= Math.min(upToDay, totalDays); d++) {
         const x = pad.left + (d / totalDays) * plotW;
         const y = pad.top + plotH - (data[d] / salary) * plotH;
-        if (d === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        if (d === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
     };
 
-    // Draw dots at pay dates
     const drawDots = (dots, color, upToDay) => {
       ctx.fillStyle = color;
       for (const dot of dots) {
@@ -300,14 +372,13 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
       }
     };
 
-    drawEarned(maxDay);
     drawLine(monthlyAccum, "#f59e0b", maxDay);
     drawLine(fnAccum, "#22d3ee", maxDay);
     drawDots(monthlyDots, "#f59e0b", maxDay);
     drawDots(fnDots, "#22d3ee", maxDay);
 
     // 2026 transition marker
-    if (year === TRANSITION_YEAR && maxDay >= getDayOfYear(FORTNIGHTLY_ANCHOR)) {
+    if (year === TRANSITION_YEAR) {
       const anchorDay = getDayOfYear(FORTNIGHTLY_ANCHOR);
       const x = pad.left + (anchorDay / totalDays) * plotW;
       ctx.strokeStyle = "rgba(34,211,238,0.4)";
@@ -318,8 +389,6 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
       ctx.lineTo(x, pad.top + plotH);
       ctx.stroke();
       ctx.setLineDash([]);
-
-      // Label
       ctx.fillStyle = "rgba(34,211,238,0.6)";
       ctx.font = "9px 'JetBrains Mono', monospace";
       ctx.textAlign = "left";
@@ -327,16 +396,54 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
       ctx.fillText("Feb 12", x + 4, pad.top + 22);
     }
 
-    // Playhead
-    if (maxDay < totalDays) {
-      const x = pad.left + (maxDay / totalDays) * plotW;
-      ctx.strokeStyle = "rgba(255,255,255,0.3)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, pad.top);
-      ctx.lineTo(x, pad.top + plotH);
-      ctx.stroke();
-    }
+    // Playhead line
+    const playX = pad.left + (maxDay / totalDays) * plotW;
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(playX, pad.top);
+    ctx.lineTo(playX, pad.top + plotH);
+    ctx.stroke();
+
+    // Playhead date label
+    const currentDate = dayIndexToDate(maxDay, year);
+    const dateLabel = `${currentDate.getDate()} ${MONTHS[currentDate.getMonth()]}`;
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 10px 'JetBrains Mono', monospace";
+    const labelWidth = ctx.measureText(dateLabel).width + 8;
+    const labelX = Math.min(Math.max(playX - labelWidth / 2, pad.left), W - pad.right - labelWidth);
+    ctx.fillStyle = "rgba(13,20,32,0.9)";
+    ctx.fillRect(labelX, pad.top + plotH + 2, labelWidth, 16);
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(labelX, pad.top + plotH + 2, labelWidth, 16);
+    ctx.fillStyle = "#f8fafc";
+    ctx.textAlign = "center";
+    ctx.fillText(dateLabel, labelX + labelWidth / 2, pad.top + plotH + 13);
+
+    // Value markers at playhead
+    const mVal = monthlyAccum[Math.min(maxDay, totalDays)];
+    const fVal = fnAccum[Math.min(maxDay, totalDays)];
+    const mY = pad.top + plotH - (mVal / salary) * plotH;
+    const fY = pad.top + plotH - (fVal / salary) * plotH;
+
+    // Monthly marker
+    ctx.fillStyle = "#f59e0b";
+    ctx.beginPath();
+    ctx.arc(playX, mY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#0d1420";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Fortnightly marker
+    ctx.fillStyle = "#22d3ee";
+    ctx.beginPath();
+    ctx.arc(playX, fY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#0d1420";
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
     // Legend
     const legendY = 14;
@@ -357,7 +464,6 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
       ctx.lineTo(lx + 20, legendY);
       ctx.stroke();
       ctx.setLineDash([]);
-      // dot marker for non-dashed
       if (!item.dash) {
         ctx.beginPath();
         ctx.arc(lx + 10, legendY, 3, 0, Math.PI * 2);
@@ -369,21 +475,174 @@ function AccumulationChart({ salary, playing, dayIndex, year, monthlyDates, fort
       lx += ctx.measureText(item.label).width + 50;
     });
 
-  }, [salary, dayIndex, year, monthlyDates, fortnightlyDates, totalDays, monthly, fortnightly, dailyRate]);
+  }, [salary, dayIndex, year, totalDays, accum, dailyRate, monthlyAccum, fnAccum, monthlyDots, fnDots]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={700}
-      height={300}
+      width={CHART_W}
+      height={CHART_H}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       style={{
         width: "100%",
-        maxWidth: 700,
+        maxWidth: CHART_W,
         height: "auto",
         borderRadius: 8,
         border: "1px solid #2a3a55",
+        cursor: "crosshair",
+        touchAction: "none",
       }}
     />
+  );
+}
+
+// Comparison cards at selected date
+function SliderInfoCards({ dayIndex, year, accum, monthly, fortnightly, salary, monthlyDates, fortnightlyDates, dailyRate, totalDays }) {
+  const currentDate = dayIndexToDate(dayIndex, year);
+
+  const mTotal = accum.monthlyAccum[Math.min(dayIndex, totalDays)];
+  const fTotal = accum.fnAccum[Math.min(dayIndex, totalDays)];
+  const earned = dayIndex * dailyRate;
+  const diff = fTotal - mTotal;
+
+  // Count payments received so far
+  const mCount = accum.monthlyDots.filter(d => d.day <= dayIndex).length;
+  const fCount = accum.fnDots.filter(d => d.day <= dayIndex).length;
+
+  // Find next pay dates
+  const nextMonthly = monthlyDates.find(d => getDayOfYear(d) > dayIndex);
+  const nextFn = fortnightlyDates.find(d => getDayOfYear(d) > dayIndex);
+  const lastMonthly = [...monthlyDates].reverse().find(d => getDayOfYear(d) <= dayIndex);
+  const lastFn = [...fortnightlyDates].reverse().find(d => getDayOfYear(d) <= dayIndex);
+
+  const cardStyle = {
+    background: "#1a2235",
+    border: "1px solid #2a3a55",
+    borderRadius: 10,
+    padding: "14px 12px",
+    textAlign: "center",
+  };
+  const labelStyle = {
+    fontSize: 10,
+    fontFamily: "'JetBrains Mono', monospace",
+    letterSpacing: "0.03em",
+    marginBottom: 4,
+  };
+  const valueStyle = {
+    fontSize: 18,
+    fontWeight: 700,
+    fontFamily: "'JetBrains Mono', monospace",
+  };
+  const subStyle = {
+    fontSize: 10,
+    color: "#475569",
+    marginTop: 3,
+    fontFamily: "'JetBrains Mono', monospace",
+    lineHeight: 1.5,
+  };
+
+  return (
+    <div>
+      {/* Date display */}
+      <div style={{
+        textAlign: "center",
+        marginBottom: 12,
+        fontSize: 13,
+        fontFamily: "'JetBrains Mono', monospace",
+        color: "#e2e8f0",
+      }}>
+        <span style={{ color: "#64748b" }}>As of </span>
+        <strong>{fmtDateFull(currentDate)}</strong>
+        <span style={{ color: "#64748b" }}> (day {dayIndex} of {totalDays})</span>
+      </div>
+
+      {/* Three comparison cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "stretch" }}>
+        {/* Monthly */}
+        <div style={{ ...cardStyle, borderTop: "3px solid #f59e0b" }}>
+          <div style={{ ...labelStyle, color: "#f59e0b" }}>MONTHLY RECEIVED</div>
+          <div style={{ ...valueStyle, color: "#f59e0b" }}>{fmt(mTotal)}</div>
+          <div style={subStyle}>
+            {mCount} of 12 payments
+            {lastMonthly && <><br />Last: {fmtDate(lastMonthly)}</>}
+            {nextMonthly && <><br />Next: {fmtDate(nextMonthly)}</>}
+          </div>
+        </div>
+
+        {/* Difference */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "10px 8px",
+          minWidth: 100,
+        }}>
+          <div style={{
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono', monospace",
+            color: "#64748b",
+            marginBottom: 4,
+          }}>DIFFERENCE</div>
+          <div style={{
+            fontSize: 16,
+            fontWeight: 700,
+            fontFamily: "'JetBrains Mono', monospace",
+            color: diff > 0 ? "#22c55e" : diff < 0 ? "#ef4444" : "#64748b",
+          }}>
+            {diff > 0 ? "+" : ""}{fmt(diff)}
+          </div>
+          <div style={{
+            fontSize: 9,
+            color: "#475569",
+            fontFamily: "'JetBrains Mono', monospace",
+            marginTop: 4,
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}>
+            {diff > 0
+              ? "Fortnightly ahead"
+              : diff < 0
+                ? "Monthly ahead"
+                : "Even"}
+          </div>
+          <div style={{
+            width: 1,
+            height: 16,
+            background: "#2a3a55",
+            margin: "8px 0",
+          }} />
+          <div style={{
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono', monospace",
+            color: "#64748b",
+            marginBottom: 2,
+          }}>EARNED</div>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: "'JetBrains Mono', monospace",
+            color: "#94a3b8",
+          }}>{fmt(earned)}</div>
+        </div>
+
+        {/* Fortnightly */}
+        <div style={{ ...cardStyle, borderTop: "3px solid #22d3ee" }}>
+          <div style={{ ...labelStyle, color: "#22d3ee" }}>FORTNIGHTLY RECEIVED</div>
+          <div style={{ ...valueStyle, color: "#22d3ee" }}>{fmt(fTotal)}</div>
+          <div style={subStyle}>
+            {fCount} of {fortnightlyDates.length} payments
+            {lastFn && <><br />Last: {fmtDate(lastFn)}</>}
+            {nextFn && <><br />Next: {fmtDate(nextFn)}</>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -398,7 +657,6 @@ function PayDateSchedule({ year, monthlyDates, fortnightlyDates, monthly, fortni
       gap: 16,
       marginTop: 16,
     }}>
-      {/* Monthly dates */}
       <div>
         <div style={{
           fontSize: 11,
@@ -443,7 +701,6 @@ function PayDateSchedule({ year, monthlyDates, fortnightlyDates, monthly, fortni
         </div>
       </div>
 
-      {/* Fortnightly dates */}
       <div>
         <div style={{
           fontSize: 11,
@@ -518,12 +775,18 @@ export default function PayComparison() {
   const monthly = salary / 12;
   const fortnightly = salary / 26.09;
 
-  // Compute actual pay dates for selected year
   const fortnightlyDates = getFortnightlyPayDates(year);
   const monthlyDates = getMonthlyPayDates(year);
   const fnCount = fortnightlyDates.length;
   const isTransitionYear = year === TRANSITION_YEAR;
   const totalDays = daysInYear(year);
+  const dailyRate = salary / totalDays;
+
+  // Pre-compute accumulation data
+  const accum = useMemo(() =>
+    computeAccumulation(totalDays, monthlyDates, fortnightlyDates, monthly, fortnightly),
+    [totalDays, monthlyDates, fortnightlyDates, monthly, fortnightly]
+  );
 
   useEffect(() => {
     setDayIndex(totalDays);
@@ -533,15 +796,14 @@ export default function PayComparison() {
     if (playing) {
       setDayIndex(0);
       let day = 0;
-      const maxDay = totalDays;
       const tick = () => {
         day += 2;
-        if (day > maxDay) {
-          day = maxDay;
+        if (day > totalDays) {
+          day = totalDays;
           setPlaying(false);
         }
         setDayIndex(day);
-        if (day < maxDay) {
+        if (day < totalDays) {
           animRef.current = requestAnimationFrame(tick);
         }
       };
@@ -550,10 +812,15 @@ export default function PayComparison() {
     }
   }, [playing, totalDays]);
 
-  // Build payment blocks for timeline using actual dates
+  const handleDayChange = useCallback((day) => {
+    setPlaying(false);
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    setDayIndex(day);
+  }, []);
+
+  // Build payment blocks for timeline
   const monthlyPayments = monthlyDates.map((d, i) => {
     const dayIdx = getDayOfYear(d);
-    // Block spans from previous pay date (or start of year) to this pay date
     const prevDay = i === 0 ? 0 : getDayOfYear(monthlyDates[i - 1]);
     const startDay = i === 0 ? 0 : prevDay;
     const blockWidth = dayIdx - startDay;
@@ -597,6 +864,50 @@ export default function PayComparison() {
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         select, button { font-family: inherit; }
+
+        .pay-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 6px;
+          border-radius: 3px;
+          background: linear-gradient(to right, #2a3a55, #2a3a55);
+          outline: none;
+          cursor: pointer;
+        }
+        .pay-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #f8fafc;
+          border: 3px solid #22d3ee;
+          cursor: grab;
+          box-shadow: 0 0 8px rgba(34,211,238,0.4);
+          transition: box-shadow 0.2s;
+        }
+        .pay-slider::-webkit-slider-thumb:hover {
+          box-shadow: 0 0 14px rgba(34,211,238,0.6);
+        }
+        .pay-slider::-webkit-slider-thumb:active {
+          cursor: grabbing;
+          box-shadow: 0 0 18px rgba(34,211,238,0.8);
+        }
+        .pay-slider::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #f8fafc;
+          border: 3px solid #22d3ee;
+          cursor: grab;
+          box-shadow: 0 0 8px rgba(34,211,238,0.4);
+        }
+        .pay-slider::-moz-range-track {
+          height: 6px;
+          border-radius: 3px;
+          background: #2a3a55;
+        }
       `}</style>
 
       <div style={{ maxWidth: 760, margin: "0 auto" }}>
@@ -743,7 +1054,6 @@ export default function PayComparison() {
             }}>hover blocks for amounts</span>
           </div>
 
-          {/* Month labels */}
           <div style={{ display: "flex", marginLeft: 98, marginBottom: 6 }}>
             {MONTHS.map((m) => (
               <div key={m} style={{
@@ -756,18 +1066,8 @@ export default function PayComparison() {
             ))}
           </div>
 
-          <TimelineBar
-            payments={monthlyPayments}
-            color="#f59e0b"
-            systemLabel="MONTHLY"
-            year={year}
-          />
-          <TimelineBar
-            payments={fnPayments}
-            color="#22d3ee"
-            systemLabel="FORTNIGHTLY"
-            year={year}
-          />
+          <TimelineBar payments={monthlyPayments} color="#f59e0b" systemLabel="MONTHLY" year={year} />
+          <TimelineBar payments={fnPayments} color="#22d3ee" systemLabel="FORTNIGHTLY" year={year} />
 
           <div style={{
             marginTop: 12,
@@ -796,7 +1096,7 @@ export default function PayComparison() {
           </div>
         </div>
 
-        {/* Accumulation chart */}
+        {/* Interactive Accumulation chart */}
         <div style={{
           background: "#131d2e",
           border: "1px solid #2a3a55",
@@ -855,7 +1155,7 @@ export default function PayComparison() {
             </div>
           </div>
 
-          {/* 26/27 payday year overview */}
+          {/* Year pills */}
           <div style={{
             display: "flex",
             flexWrap: "wrap",
@@ -915,20 +1215,72 @@ export default function PayComparison() {
           }}>
             <span style={{ color: "#64748b" }}>26 paydays = most years</span>
             <span style={{ color: "#22d3ee" }}>27 paydays = highlighted</span>
-            {<span style={{ color: "#f59e0b" }}>* = transition year</span>}
+            <span style={{ color: "#f59e0b" }}>* = transition year</span>
           </div>
 
+          {/* Chart — click or drag to set date */}
           <AccumulationChart
             salary={salary}
-            playing={playing}
             dayIndex={dayIndex}
             year={year}
+            totalDays={totalDays}
+            accum={accum}
+            dailyRate={dailyRate}
+            onDayChange={handleDayChange}
+          />
+
+          {/* Instruction */}
+          <div style={{
+            textAlign: "center",
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono', monospace",
+            color: "#475569",
+            marginTop: 6,
+            marginBottom: 4,
+          }}>
+            Click or drag on the chart, or use the slider below to explore any date
+          </div>
+
+          {/* Date slider */}
+          <div style={{ padding: "8px 0 12px" }}>
+            <input
+              type="range"
+              className="pay-slider"
+              min={0}
+              max={totalDays}
+              value={dayIndex}
+              onChange={e => handleDayChange(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 9,
+              fontFamily: "'JetBrains Mono', monospace",
+              color: "#475569",
+              marginTop: 4,
+            }}>
+              <span>1 Jan</span>
+              <span>31 Dec</span>
+            </div>
+          </div>
+
+          {/* Live comparison cards */}
+          <SliderInfoCards
+            dayIndex={dayIndex}
+            year={year}
+            accum={accum}
+            monthly={monthly}
+            fortnightly={fortnightly}
+            salary={salary}
             monthlyDates={monthlyDates}
             fortnightlyDates={fortnightlyDates}
+            dailyRate={dailyRate}
+            totalDays={totalDays}
           />
 
           <div style={{
-            marginTop: 12,
+            marginTop: 14,
             fontSize: 12,
             color: "#64748b",
             textAlign: "center",
@@ -938,15 +1290,12 @@ export default function PayComparison() {
               <>
                 <strong style={{ color: "#f59e0b" }}>2026 is the transition year.</strong> January was paid monthly (old system).
                 <br />Fortnightly payments began Feb 12, so the cyan line starts in February.
-                <br />Dots mark each actual pay date. The monthly staircase has 12 big steps, the fortnightly has {fnCount} smaller steps.
               </>
             ) : (
               <>
-                Both systems follow the dashed line (actual salary earned) — just in different step patterns.
-                <br />The monthly staircase has 12 big steps. The fortnightly staircase has {fnCount} smaller steps.
-                <br />{fnCount === 27
-                  ? `${year} is a 27-payday year — one extra paycheck falls in this calendar year, making the fortnightly total slightly exceed the annual salary.`
-                  : `${year} is a 26-payday year — the fortnightly total falls just short of the annual salary. The remainder rolls into January ${year + 1}.`
+                {fnCount === 27
+                  ? `${year} is a 27-payday year — one extra paycheck falls in this calendar year.`
+                  : `${year} is a 26-payday year — the fortnightly total falls just short. The remainder rolls into January ${year + 1}.`
                 }
               </>
             )}
@@ -1044,7 +1393,7 @@ export default function PayComparison() {
                 fontFamily: "'JetBrains Mono', monospace",
                 color: "#22d3ee",
                 marginBottom: 8,
-              }}>27-PAYDAY YEAR (EVERY ~5-6 YRS)</div>
+              }}>27-PAYDAY YEAR (EVERY ~11 YRS)</div>
               <div style={{
                 fontSize: 18,
                 fontWeight: 700,
@@ -1071,7 +1420,6 @@ export default function PayComparison() {
             </div>
           </div>
 
-          {/* Which years are 26 vs 27 */}
           <div style={{
             background: "#1a2235",
             borderRadius: 8,
