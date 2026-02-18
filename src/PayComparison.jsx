@@ -760,6 +760,54 @@ function PayDateSchedule({ year, monthlyDates, fortnightlyDates, monthly, fortni
   );
 }
 
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "explorer", label: "Pay Explorer" },
+  { id: "dates", label: "Pay Dates" },
+  { id: "years", label: "26 vs 27" },
+];
+
+function TabBar({ activeTab, onTabChange }) {
+  return (
+    <div style={{
+      display: "flex",
+      gap: 2,
+      marginBottom: 20,
+      background: "#1a2235",
+      borderRadius: 10,
+      padding: 3,
+      border: "1px solid #2a3a55",
+    }}>
+      {TABS.map(tab => {
+        const isActive = tab.id === activeTab;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onTabChange(tab.id)}
+            style={{
+              flex: 1,
+              padding: "10px 8px",
+              fontSize: 13,
+              fontWeight: isActive ? 600 : 400,
+              fontFamily: "'JetBrains Mono', monospace",
+              color: isActive ? "#f8fafc" : "#64748b",
+              background: isActive ? "rgba(34,211,238,0.15)" : "transparent",
+              border: isActive ? "1px solid rgba(34,211,238,0.3)" : "1px solid transparent",
+              borderRadius: 8,
+              cursor: "pointer",
+              outline: "none",
+              transition: "all 0.2s",
+              letterSpacing: "0.01em",
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function PayComparison() {
   const scaleNames = Object.keys(PAY_SCALES);
   const [scale, setScale] = useState(scaleNames.find(s => s.includes("Lecturer /")) || scaleNames[0]);
@@ -768,6 +816,7 @@ export default function PayComparison() {
   const [dayIndex, setDayIndex] = useState(365);
   const [year, setYear] = useState(2026);
   const [showDates, setShowDates] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
   const animRef = useRef(null);
 
   const points = PAY_SCALES[scale];
@@ -1030,95 +1079,277 @@ export default function PayComparison() {
           ))}
         </div>
 
-        {/* Timeline */}
-        <div style={{
-          background: "#131d2e",
-          border: "1px solid #2a3a55",
-          borderRadius: 12,
-          padding: "20px 16px",
-          marginBottom: 20,
-        }}>
+        {/* Tab bar */}
+        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
+        {/* ===== OVERVIEW TAB ===== */}
+        {activeTab === "overview" && (<>
+          {/* Timeline */}
           <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 14,
+            background: "#131d2e",
+            border: "1px solid #2a3a55",
+            borderRadius: 12,
+            padding: "20px 16px",
+            marginBottom: 20,
           }}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0" }}>
-              Payment Timeline — {year}
-            </h2>
-            <span style={{
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+            }}>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0" }}>
+                Payment Timeline — {year}
+              </h2>
+              <span style={{
+                fontSize: 10,
+                fontFamily: "'JetBrains Mono', monospace",
+                color: "#475569",
+              }}>hover blocks for amounts</span>
+            </div>
+
+            <div style={{ display: "flex", marginLeft: 98, marginBottom: 6 }}>
+              {MONTHS.map((m) => (
+                <div key={m} style={{
+                  flex: 1,
+                  fontSize: 9,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#475569",
+                  textAlign: "left",
+                }}>{m}</div>
+              ))}
+            </div>
+
+            <TimelineBar payments={monthlyPayments} color="#f59e0b" systemLabel="MONTHLY" year={year} />
+            <TimelineBar payments={fnPayments} color="#22d3ee" systemLabel="FORTNIGHTLY" year={year} />
+
+            <div style={{
+              marginTop: 12,
+              fontSize: 12,
+              color: "#64748b",
+              textAlign: "center",
+              lineHeight: 1.6,
+            }}>
+              {monthlyDates.length} monthly payments vs {fnCount} fortnightly payments in {year}
+              {isTransitionYear && " (fortnightly began Feb 12)"}
+            </div>
+
+            <div style={{
+              marginTop: 10,
+              background: "rgba(245,158,11,0.06)",
+              border: "1px solid rgba(245,158,11,0.15)",
+              borderRadius: 6,
+              padding: "10px 14px",
+              fontSize: 11,
+              color: "#94a3b8",
+              lineHeight: 1.6,
+            }}>
+              <strong style={{ color: "#f59e0b" }}>Old system note:</strong> Monthly pay was the last Friday of each month, except December
+              which was paid early (last Friday before Christmas). That meant a ~5 week gap between December and January pay —
+              the old system had its own uneven rhythm too.
+            </div>
+          </div>
+
+          {/* The key insight */}
+          <div style={{
+            background: "linear-gradient(135deg, rgba(34,211,238,0.08), rgba(34,211,238,0.02))",
+            border: "1px solid rgba(34,211,238,0.2)",
+            borderRadius: 12,
+            padding: "24px 20px",
+            textAlign: "center",
+            marginBottom: 20,
+          }}>
+            <div style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: "#f8fafc",
+              marginBottom: 10,
+              lineHeight: 1.4,
+            }}>The Simple Truth</div>
+            <div style={{
+              fontSize: 14,
+              color: "#94a3b8",
+              lineHeight: 1.8,
+              maxWidth: 560,
+              margin: "0 auto",
+            }}>
+              <strong style={{ color: "#f59e0b" }}>Old system:</strong> salary split into 12 equal chunks, paid last Friday of each month (except December — paid early before Christmas). Calendar dates matter.
+              <br />
+              <strong style={{ color: "#22d3ee" }}>New system:</strong> salary paid every second Thursday for 14 days of work. Calendar dates are irrelevant.
+              <br /><br />
+              <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                Same annual salary. Same pension. Same career earnings.
+                <br />Just a different rhythm.
+              </span>
+            </div>
+          </div>
+        </>)}
+
+        {/* ===== PAY EXPLORER TAB ===== */}
+        {activeTab === "explorer" && (<>
+          <div style={{
+            background: "#131d2e",
+            border: "1px solid #2a3a55",
+            borderRadius: 12,
+            padding: "20px 16px",
+            marginBottom: 20,
+          }}>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+              flexWrap: "wrap",
+              gap: 10,
+            }}>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0" }}>
+                How Your Pay Accumulates — {year}
+              </h2>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select
+                  value={year}
+                  onChange={e => { setYear(Number(e.target.value)); setPlaying(false); }}
+                  style={{
+                    background: "#1a2235",
+                    color: "#e2e8f0",
+                    border: "1px solid #2a3a55",
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    cursor: "pointer",
+                    outline: "none",
+                  }}
+                >
+                  {YEAR_RANGE.map(y => (
+                    <option key={y} value={y}>
+                      {y} ({YEAR_PAYDAY_COUNTS[y]} paydays{y === TRANSITION_YEAR ? " *" : ""})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => { if (!playing) setPlaying(true); }}
+                  style={{
+                    background: playing ? "#1e293b" : "rgba(34,211,238,0.15)",
+                    color: playing ? "#475569" : "#22d3ee",
+                    border: `1px solid ${playing ? "#2a3a55" : "rgba(34,211,238,0.3)"}`,
+                    borderRadius: 6,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    cursor: playing ? "default" : "pointer",
+                  }}
+                >
+                  {playing ? "Playing..." : "\u25B6 Animate"}
+                </button>
+              </div>
+            </div>
+
+            {/* Chart */}
+            <AccumulationChart
+              salary={salary}
+              dayIndex={dayIndex}
+              year={year}
+              totalDays={totalDays}
+              accum={accum}
+              dailyRate={dailyRate}
+              onDayChange={handleDayChange}
+            />
+
+            <div style={{
+              textAlign: "center",
               fontSize: 10,
               fontFamily: "'JetBrains Mono', monospace",
               color: "#475569",
-            }}>hover blocks for amounts</span>
-          </div>
+              marginTop: 6,
+              marginBottom: 4,
+            }}>
+              Click or drag on the chart, or use the slider below to explore any date
+            </div>
 
-          <div style={{ display: "flex", marginLeft: 98, marginBottom: 6 }}>
-            {MONTHS.map((m) => (
-              <div key={m} style={{
-                flex: 1,
+            {/* Date slider */}
+            <div style={{ padding: "8px 0 12px" }}>
+              <input
+                type="range"
+                className="pay-slider"
+                min={0}
+                max={totalDays}
+                value={dayIndex}
+                onChange={e => handleDayChange(Number(e.target.value))}
+                style={{ width: "100%" }}
+              />
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
                 fontSize: 9,
                 fontFamily: "'JetBrains Mono', monospace",
                 color: "#475569",
-                textAlign: "left",
-              }}>{m}</div>
-            ))}
+                marginTop: 4,
+              }}>
+                <span>1 Jan</span>
+                <span>31 Dec</span>
+              </div>
+            </div>
+
+            {/* Live comparison cards */}
+            <SliderInfoCards
+              dayIndex={dayIndex}
+              year={year}
+              accum={accum}
+              monthly={monthly}
+              fortnightly={fortnightly}
+              salary={salary}
+              monthlyDates={monthlyDates}
+              fortnightlyDates={fortnightlyDates}
+              dailyRate={dailyRate}
+              totalDays={totalDays}
+            />
+
+            <div style={{
+              marginTop: 14,
+              fontSize: 12,
+              color: "#64748b",
+              textAlign: "center",
+              lineHeight: 1.6,
+            }}>
+              {isTransitionYear ? (
+                <>
+                  <strong style={{ color: "#f59e0b" }}>2026 is the transition year.</strong> January was paid monthly (old system).
+                  <br />Fortnightly payments began Feb 12, so the cyan line starts in February.
+                </>
+              ) : (
+                <>
+                  {fnCount === 27
+                    ? `${year} is a 27-payday year — one extra paycheck falls in this calendar year.`
+                    : `${year} is a 26-payday year — the fortnightly total falls just short. The remainder rolls into January ${year + 1}.`
+                  }
+                </>
+              )}
+            </div>
           </div>
+        </>)}
 
-          <TimelineBar payments={monthlyPayments} color="#f59e0b" systemLabel="MONTHLY" year={year} />
-          <TimelineBar payments={fnPayments} color="#22d3ee" systemLabel="FORTNIGHTLY" year={year} />
-
+        {/* ===== PAY DATES TAB ===== */}
+        {activeTab === "dates" && (<>
           <div style={{
-            marginTop: 12,
-            fontSize: 12,
-            color: "#64748b",
-            textAlign: "center",
-            lineHeight: 1.6,
+            background: "#131d2e",
+            border: "1px solid #2a3a55",
+            borderRadius: 12,
+            padding: "20px 16px",
+            marginBottom: 20,
           }}>
-            {monthlyDates.length} monthly payments vs {fnCount} fortnightly payments in {year}
-            {isTransitionYear && " (fortnightly began Feb 12)"}
-          </div>
-
-          <div style={{
-            marginTop: 10,
-            background: "rgba(245,158,11,0.06)",
-            border: "1px solid rgba(245,158,11,0.15)",
-            borderRadius: 6,
-            padding: "10px 14px",
-            fontSize: 11,
-            color: "#94a3b8",
-            lineHeight: 1.6,
-          }}>
-            <strong style={{ color: "#f59e0b" }}>Old system note:</strong> Monthly pay was the last Friday of each month, except December
-            which was paid early (last Friday before Christmas). That meant a ~5 week gap between December and January pay —
-            the old system had its own uneven rhythm too.
-          </div>
-        </div>
-
-        {/* Interactive Accumulation chart */}
-        <div style={{
-          background: "#131d2e",
-          border: "1px solid #2a3a55",
-          borderRadius: 12,
-          padding: "20px 16px",
-          marginBottom: 20,
-        }}>
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 14,
-            flexWrap: "wrap",
-            gap: 10,
-          }}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0" }}>
-              How Your Pay Accumulates — {year}
-            </h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+            }}>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0" }}>
+                All Pay Dates — {year}
+              </h2>
               <select
                 value={year}
-                onChange={e => { setYear(Number(e.target.value)); setPlaying(false); }}
+                onChange={e => setYear(Number(e.target.value))}
                 style={{
                   background: "#1a2235",
                   color: "#e2e8f0",
@@ -1132,196 +1363,10 @@ export default function PayComparison() {
                 }}
               >
                 {YEAR_RANGE.map(y => (
-                  <option key={y} value={y}>
-                    {y} ({YEAR_PAYDAY_COUNTS[y]} paydays{y === TRANSITION_YEAR ? " *" : ""})
-                  </option>
+                  <option key={y} value={y}>{y}</option>
                 ))}
               </select>
-              <button
-                onClick={() => { if (!playing) setPlaying(true); }}
-                style={{
-                  background: playing ? "#1e293b" : "rgba(34,211,238,0.15)",
-                  color: playing ? "#475569" : "#22d3ee",
-                  border: `1px solid ${playing ? "#2a3a55" : "rgba(34,211,238,0.3)"}`,
-                  borderRadius: 6,
-                  padding: "6px 14px",
-                  fontSize: 12,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  cursor: playing ? "default" : "pointer",
-                }}
-              >
-                {playing ? "Playing..." : "\u25B6 Animate"}
-              </button>
             </div>
-          </div>
-
-          {/* Year pills */}
-          <div style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 4,
-            marginBottom: 14,
-            justifyContent: "center",
-          }}>
-            {YEAR_RANGE.map(y => {
-              const count = YEAR_PAYDAY_COUNTS[y];
-              const is27 = count === 27;
-              const isSelected = y === year;
-              const isTransition = y === TRANSITION_YEAR;
-              return (
-                <button
-                  key={y}
-                  onClick={() => { setYear(y); setPlaying(false); }}
-                  style={{
-                    background: isSelected
-                      ? (is27 ? "rgba(34,211,238,0.25)" : "rgba(245,158,11,0.2)")
-                      : "#1a2235",
-                    color: isSelected
-                      ? "#f8fafc"
-                      : (is27 ? "#22d3ee" : "#64748b"),
-                    border: `1px solid ${isSelected
-                      ? (is27 ? "rgba(34,211,238,0.5)" : "rgba(245,158,11,0.4)")
-                      : "#2a3a55"}`,
-                    borderRadius: 6,
-                    padding: "4px 8px",
-                    fontSize: 11,
-                    fontFamily: "'JetBrains Mono', monospace",
-                    cursor: "pointer",
-                    position: "relative",
-                    outline: "none",
-                    fontWeight: isSelected ? 700 : 400,
-                  }}
-                  title={`${y}: ${count} fortnightly paydays${isTransition ? " (transition year)" : ""}`}
-                >
-                  {y}
-                  {isTransition && <span style={{ color: "#f59e0b", marginLeft: 2 }}>*</span>}
-                  <div style={{
-                    fontSize: 8,
-                    color: is27 ? "#22d3ee" : "#475569",
-                    marginTop: 1,
-                  }}>{count}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 16,
-            marginBottom: 12,
-            fontSize: 10,
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>
-            <span style={{ color: "#64748b" }}>26 paydays = most years</span>
-            <span style={{ color: "#22d3ee" }}>27 paydays = highlighted</span>
-            <span style={{ color: "#f59e0b" }}>* = transition year</span>
-          </div>
-
-          {/* Chart — click or drag to set date */}
-          <AccumulationChart
-            salary={salary}
-            dayIndex={dayIndex}
-            year={year}
-            totalDays={totalDays}
-            accum={accum}
-            dailyRate={dailyRate}
-            onDayChange={handleDayChange}
-          />
-
-          {/* Instruction */}
-          <div style={{
-            textAlign: "center",
-            fontSize: 10,
-            fontFamily: "'JetBrains Mono', monospace",
-            color: "#475569",
-            marginTop: 6,
-            marginBottom: 4,
-          }}>
-            Click or drag on the chart, or use the slider below to explore any date
-          </div>
-
-          {/* Date slider */}
-          <div style={{ padding: "8px 0 12px" }}>
-            <input
-              type="range"
-              className="pay-slider"
-              min={0}
-              max={totalDays}
-              value={dayIndex}
-              onChange={e => handleDayChange(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 9,
-              fontFamily: "'JetBrains Mono', monospace",
-              color: "#475569",
-              marginTop: 4,
-            }}>
-              <span>1 Jan</span>
-              <span>31 Dec</span>
-            </div>
-          </div>
-
-          {/* Live comparison cards */}
-          <SliderInfoCards
-            dayIndex={dayIndex}
-            year={year}
-            accum={accum}
-            monthly={monthly}
-            fortnightly={fortnightly}
-            salary={salary}
-            monthlyDates={monthlyDates}
-            fortnightlyDates={fortnightlyDates}
-            dailyRate={dailyRate}
-            totalDays={totalDays}
-          />
-
-          <div style={{
-            marginTop: 14,
-            fontSize: 12,
-            color: "#64748b",
-            textAlign: "center",
-            lineHeight: 1.6,
-          }}>
-            {isTransitionYear ? (
-              <>
-                <strong style={{ color: "#f59e0b" }}>2026 is the transition year.</strong> January was paid monthly (old system).
-                <br />Fortnightly payments began Feb 12, so the cyan line starts in February.
-              </>
-            ) : (
-              <>
-                {fnCount === 27
-                  ? `${year} is a 27-payday year — one extra paycheck falls in this calendar year.`
-                  : `${year} is a 26-payday year — the fortnightly total falls just short. The remainder rolls into January ${year + 1}.`
-                }
-              </>
-            )}
-          </div>
-
-          {/* Toggle pay date schedule */}
-          <div style={{ textAlign: "center", marginTop: 14 }}>
-            <button
-              onClick={() => setShowDates(!showDates)}
-              style={{
-                background: showDates ? "rgba(34,211,238,0.1)" : "transparent",
-                color: "#22d3ee",
-                border: "1px solid rgba(34,211,238,0.2)",
-                borderRadius: 6,
-                padding: "6px 16px",
-                fontSize: 12,
-                fontFamily: "'JetBrains Mono', monospace",
-                cursor: "pointer",
-                outline: "none",
-              }}
-            >
-              {showDates ? "Hide" : "Show"} all pay dates for {year}
-            </button>
-          </div>
-
-          {showDates && (
             <PayDateSchedule
               year={year}
               monthlyDates={monthlyDates}
@@ -1329,173 +1374,169 @@ export default function PayComparison() {
               monthly={monthly}
               fortnightly={fortnightly}
             />
-          )}
-        </div>
-
-        {/* Calendar year counting */}
-        <div style={{
-          background: "#131d2e",
-          border: "1px solid #2a3a55",
-          borderRadius: 12,
-          padding: "20px 16px",
-          marginBottom: 20,
-        }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0", marginBottom: 14 }}>
-            The Calendar Year "Problem" (That Isn't One)
-          </h2>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <div style={{
-              background: "#1a2235",
-              borderRadius: 8,
-              padding: 16,
-              borderLeft: "3px solid #f59e0b",
-            }}>
-              <div style={{
-                fontSize: 11,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#f59e0b",
-                marginBottom: 8,
-              }}>26-PAYDAY YEAR (MOST YEARS)</div>
-              <div style={{
-                fontSize: 18,
-                fontWeight: 700,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#e2e8f0",
-              }}>26 x {fmtShort(fortnightly)}</div>
-              <div style={{
-                fontSize: 14,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#94a3b8",
-                margin: "4px 0",
-              }}>= {fmt(annualFn26)}</div>
-              <div style={{
-                fontSize: 12,
-                color: "#ef4444",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}>{"\u2212"}{fmt(diff26)} vs annual salary</div>
-              <div style={{
-                fontSize: 11,
-                color: "#475569",
-                marginTop: 8,
-                lineHeight: 1.5,
-              }}>This {"\u20AC"}{fmtShort(diff26)} is not missing — it's in your next paycheck, which lands in January.</div>
-            </div>
-
-            <div style={{
-              background: "#1a2235",
-              borderRadius: 8,
-              padding: 16,
-              borderLeft: "3px solid #22d3ee",
-            }}>
-              <div style={{
-                fontSize: 11,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#22d3ee",
-                marginBottom: 8,
-              }}>27-PAYDAY YEAR (EVERY ~11 YRS)</div>
-              <div style={{
-                fontSize: 18,
-                fontWeight: 700,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#e2e8f0",
-              }}>27 x {fmtShort(fortnightly)}</div>
-              <div style={{
-                fontSize: 14,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#94a3b8",
-                margin: "4px 0",
-              }}>= {fmt(annualFn27)}</div>
-              <div style={{
-                fontSize: 12,
-                color: "#22c55e",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}>+{fmt(diff27)} vs annual salary</div>
-              <div style={{
-                fontSize: 11,
-                color: "#475569",
-                marginTop: 8,
-                lineHeight: 1.5,
-              }}>This isn't bonus money — it includes a paycheck earned in the previous December.</div>
-            </div>
           </div>
+        </>)}
 
+        {/* ===== 26 vs 27 TAB ===== */}
+        {activeTab === "years" && (<>
           <div style={{
-            background: "#1a2235",
-            borderRadius: 8,
-            padding: "12px 14px",
-            marginBottom: 14,
+            background: "#131d2e",
+            border: "1px solid #2a3a55",
+            borderRadius: 12,
+            padding: "20px 16px",
+            marginBottom: 20,
           }}>
-            <div style={{
-              fontSize: 11,
-              fontFamily: "'JetBrains Mono', monospace",
-              color: "#8a9bb5",
-              marginBottom: 8,
-            }}>UPCOMING 27-PAYDAY YEARS</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {YEAR_RANGE.filter(y => YEAR_PAYDAY_COUNTS[y] === 27).map(y => (
-                <span key={y} style={{
-                  background: "rgba(34,211,238,0.12)",
-                  color: "#22d3ee",
-                  border: "1px solid rgba(34,211,238,0.25)",
-                  borderRadius: 4,
-                  padding: "3px 10px",
-                  fontSize: 12,
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0", marginBottom: 14 }}>
+              The Calendar Year "Problem" (That Isn't One)
+            </h2>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div style={{
+                background: "#1a2235",
+                borderRadius: 8,
+                padding: 16,
+                borderLeft: "3px solid #f59e0b",
+              }}>
+                <div style={{
+                  fontSize: 11,
                   fontFamily: "'JetBrains Mono', monospace",
-                  fontWeight: 600,
-                }}>{y}</span>
-              ))}
+                  color: "#f59e0b",
+                  marginBottom: 8,
+                }}>26-PAYDAY YEAR (MOST YEARS)</div>
+                <div style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#e2e8f0",
+                }}>26 x {fmtShort(fortnightly)}</div>
+                <div style={{
+                  fontSize: 14,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#94a3b8",
+                  margin: "4px 0",
+                }}>= {fmt(annualFn26)}</div>
+                <div style={{
+                  fontSize: 12,
+                  color: "#ef4444",
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}>{"\u2212"}{fmt(diff26)} vs annual salary</div>
+                <div style={{
+                  fontSize: 11,
+                  color: "#475569",
+                  marginTop: 8,
+                  lineHeight: 1.5,
+                }}>This {"\u20AC"}{fmtShort(diff26)} is not missing — it's in your next paycheck, which lands in January.</div>
+              </div>
+
+              <div style={{
+                background: "#1a2235",
+                borderRadius: 8,
+                padding: 16,
+                borderLeft: "3px solid #22d3ee",
+              }}>
+                <div style={{
+                  fontSize: 11,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#22d3ee",
+                  marginBottom: 8,
+                }}>27-PAYDAY YEAR (EVERY ~11 YRS)</div>
+                <div style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#e2e8f0",
+                }}>27 x {fmtShort(fortnightly)}</div>
+                <div style={{
+                  fontSize: 14,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#94a3b8",
+                  margin: "4px 0",
+                }}>= {fmt(annualFn27)}</div>
+                <div style={{
+                  fontSize: 12,
+                  color: "#22c55e",
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}>+{fmt(diff27)} vs annual salary</div>
+                <div style={{
+                  fontSize: 11,
+                  color: "#475569",
+                  marginTop: 8,
+                  lineHeight: 1.5,
+                }}>This isn't bonus money — it includes a paycheck earned in the previous December.</div>
+              </div>
+            </div>
+
+            {/* Year pills */}
+            <div style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 4,
+              marginBottom: 14,
+              justifyContent: "center",
+            }}>
+              {YEAR_RANGE.map(y => {
+                const count = YEAR_PAYDAY_COUNTS[y];
+                const is27 = count === 27;
+                const isTransition = y === TRANSITION_YEAR;
+                return (
+                  <button
+                    key={y}
+                    onClick={() => { setYear(y); setActiveTab("explorer"); }}
+                    style={{
+                      background: is27 ? "rgba(34,211,238,0.15)" : "#1a2235",
+                      color: is27 ? "#22d3ee" : "#64748b",
+                      border: `1px solid ${is27 ? "rgba(34,211,238,0.4)" : "#2a3a55"}`,
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      cursor: "pointer",
+                      outline: "none",
+                      fontWeight: is27 ? 700 : 400,
+                    }}
+                    title={`${y}: ${count} paydays — click to explore`}
+                  >
+                    {y}
+                    {isTransition && <span style={{ color: "#f59e0b", marginLeft: 2 }}>*</span>}
+                    <div style={{
+                      fontSize: 8,
+                      color: is27 ? "#22d3ee" : "#475569",
+                      marginTop: 1,
+                    }}>{count}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 16,
+              marginBottom: 14,
+              fontSize: 10,
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              <span style={{ color: "#64748b" }}>26 paydays = most years</span>
+              <span style={{ color: "#22d3ee" }}>27 paydays = highlighted</span>
+              <span style={{ color: "#f59e0b" }}>* = transition year</span>
+              <span style={{ color: "#475569" }}>click a year to explore</span>
+            </div>
+
+            <div style={{
+              background: "rgba(34,211,238,0.05)",
+              border: "1px solid rgba(34,211,238,0.15)",
+              borderRadius: 8,
+              padding: 14,
+              fontSize: 13,
+              color: "#94a3b8",
+              lineHeight: 1.6,
+              textAlign: "center",
+            }}>
+              <strong style={{ color: "#22d3ee" }}>Neither is real.</strong> Both are caused by trying to fit 14-day payment cycles into calendar years.
+              <br />Your pay is a continuous stream — every 14 days, {fmt(fortnightly)} — regardless of what the calendar says.
             </div>
           </div>
-
-          <div style={{
-            background: "rgba(34,211,238,0.05)",
-            border: "1px solid rgba(34,211,238,0.15)",
-            borderRadius: 8,
-            padding: 14,
-            fontSize: 13,
-            color: "#94a3b8",
-            lineHeight: 1.6,
-            textAlign: "center",
-          }}>
-            <strong style={{ color: "#22d3ee" }}>Neither is real.</strong> Both are caused by trying to fit 14-day payment cycles into calendar years.
-            <br />Your pay is a continuous stream — every 14 days, {fmt(fortnightly)} — regardless of what the calendar says.
-          </div>
-        </div>
-
-        {/* The key insight */}
-        <div style={{
-          background: "linear-gradient(135deg, rgba(34,211,238,0.08), rgba(34,211,238,0.02))",
-          border: "1px solid rgba(34,211,238,0.2)",
-          borderRadius: 12,
-          padding: "24px 20px",
-          textAlign: "center",
-          marginBottom: 20,
-        }}>
-          <div style={{
-            fontSize: 18,
-            fontWeight: 700,
-            color: "#f8fafc",
-            marginBottom: 10,
-            lineHeight: 1.4,
-          }}>The Simple Truth</div>
-          <div style={{
-            fontSize: 14,
-            color: "#94a3b8",
-            lineHeight: 1.8,
-            maxWidth: 560,
-            margin: "0 auto",
-          }}>
-            <strong style={{ color: "#f59e0b" }}>Old system:</strong> salary split into 12 equal chunks, paid last Friday of each month (except December — paid early before Christmas). Calendar dates matter.
-            <br />
-            <strong style={{ color: "#22d3ee" }}>New system:</strong> salary paid every second Thursday for 14 days of work. Calendar dates are irrelevant.
-            <br /><br />
-            <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
-              Same annual salary. Same pension. Same career earnings.
-              <br />Just a different rhythm.
-            </span>
-          </div>
-        </div>
+        </>)}
 
         <div style={{
           textAlign: "center",
