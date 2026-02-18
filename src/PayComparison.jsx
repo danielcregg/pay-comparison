@@ -1,30 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import payData from "./payscales.json";
 
-const PAY_SCALES = {
-  "Assistant Lecturer": [
-    { point: 1, salary: 47101 },
-    { point: 2, salary: 49603 },
-    { point: 3, salary: 51664 },
-    { point: 4, salary: 55553 },
-    { point: 5, salary: 57157 },
-    { point: 6, salary: 58795 },
-    { point: 7, salary: 62096 },
-    { point: 8, salary: 63735 },
-  ],
-  "Lecturer": [
-    { point: 1, salary: 68936 },
-    { point: 2, salary: 72110 },
-    { point: 3, salary: 83178 },
-    { point: 4, salary: 86075 },
-    { point: 5, salary: 89004 },
-    { point: 6, salary: 91946 },
-    { point: 7, salary: 94903 },
-    { point: 8, salary: 97838 },
-    { point: 9, salary: 100772 },
-    { point: 10, salary: 103720 },
-    { point: 11, salary: 106661 },
-  ],
-};
+const PAY_SCALES = payData.scales;
 
 const fmt = (n) => n.toLocaleString("en-IE", { style: "currency", currency: "EUR" });
 const fmtShort = (n) => n.toLocaleString("en-IE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -187,7 +164,7 @@ function AccumulationChart({ salary, playing, dayIndex }) {
     for (let d = 0; d <= 365; d++) {
       // Monthly: paid on day ~30.4, 60.8, 91.3, etc.
       const monthNum = Math.floor(d / 30.4375);
-      const prevMonthNum = d > 0 ? Math.floor((d - 1) / 30.4375) : -1;
+      const prevMonthNum = d > 0 ? Math.floor((d - 1) / 30.4375) : 0;
       if (monthNum > prevMonthNum && monthNum <= 12) {
         mTotal += monthly;
       }
@@ -289,7 +266,8 @@ function AccumulationChart({ salary, playing, dayIndex }) {
 }
 
 export default function PayComparison() {
-  const [scale, setScale] = useState("Lecturer");
+  const scaleNames = Object.keys(PAY_SCALES);
+  const [scale, setScale] = useState(scaleNames.find(s => s.includes("Lecturer /")) || scaleNames[0]);
   const [pointIdx, setPointIdx] = useState(4);
   const [playing, setPlaying] = useState(false);
   const [dayIndex, setDayIndex] = useState(365);
@@ -424,8 +402,9 @@ export default function PayComparison() {
               minWidth: 200,
             }}
           >
-            <option value="Assistant Lecturer">Assistant Lecturer</option>
-            <option value="Lecturer">Lecturer</option>
+            {scaleNames.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
           </select>
           <select
             value={pointIdx}
@@ -443,7 +422,7 @@ export default function PayComparison() {
             }}
           >
             {points.map((p, i) => (
-              <option key={i} value={i}>Point {p.point}: {fmt(p.salary)}</option>
+              <option key={i} value={i}>{p.label ? `${p.label}` : `Point ${p.point}`}: {fmt(p.salary)}</option>
             ))}
           </select>
         </div>
@@ -758,8 +737,11 @@ export default function PayComparison() {
           color: "#334155",
           fontFamily: "'JetBrains Mono', monospace",
           padding: "8px 0 16px",
+          lineHeight: 1.8,
         }}>
           ATU Galway — Staff Pay Information Tool
+          <br />
+          Pay scales from <a href={payData.source} target="_blank" rel="noopener noreferrer" style={{ color: "#475569" }}>TUI.ie</a> — updated {payData.lastUpdated}
         </div>
       </div>
     </div>
