@@ -475,7 +475,7 @@ function AccumulationChart({ salary, dayIndex, year, totalDays, accum, dailyRate
       lx += ctx.measureText(item.label).width + 50;
     });
 
-  }, [salary, dayIndex, year, totalDays, accum, dailyRate, monthlyAccum, fnAccum, monthlyDots, fnDots]);
+  }, [salary, dayIndex, year, totalDays, accum, dailyRate]);
 
   return (
     <canvas
