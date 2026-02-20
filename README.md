@@ -1,64 +1,75 @@
-# ATU Pay Comparison — Monthly vs Fortnightly
+# ATU Pay Comparison
 
-Interactive tool showing how monthly and fortnightly pay systems deliver the same annual salary.
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)
 
-**Live demo:** `https://YOUR_USERNAME.github.io/pay-comparison/`
+An interactive tool that visualises how ATU's monthly and fortnightly pay systems deliver the same annual salary. Built with React and deployable to GitHub Pages.
 
-## Deploy to GitHub Pages
+## Overview
 
-### One-time setup
+ATU transitioned from monthly to fortnightly pay in 2026. This application helps staff understand that both payment schedules result in the same total compensation. Users can select their pay scale and increment point, then explore animated charts, side-by-side timelines, and full pay-date schedules across any year from 2026 to 2048. The tool also explains the 26- vs 27-payday year phenomenon.
 
-1. **Create a GitHub repo** called `pay-comparison` (or whatever you like)
+## Features
 
-2. **Update two files** with your GitHub username:
-   
-   In `package.json`, replace `YOUR_USERNAME`:
-   ```
-   "homepage": "https://YOUR_USERNAME.github.io/pay-comparison"
-   ```
-   
-   In `vite.config.js`, if you used a different repo name, update:
-   ```
-   base: '/your-repo-name/',
-   ```
+- Interactive pay scale and increment point selector (data scraped from TUI.ie)
+- Animated cumulative pay chart with click-and-drag date exploration
+- Side-by-side monthly vs fortnightly timeline bars
+- Live comparison cards showing received totals at any point in the year
+- Full pay-date schedule view with running totals
+- 26 vs 27 payday year explainer with year-by-year breakdown
+- Responsive dark-themed UI with touch support
+- Automated pay-scale data fetching from TUI.ie
 
-3. **Push the code to GitHub:**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/pay-comparison.git
-   git push -u origin main
-   ```
+## Prerequisites
 
-4. **Deploy:**
-   ```bash
-   npm run deploy
-   ```
+- [Node.js](https://nodejs.org/) 18+
+- npm 9+
 
-5. **Enable GitHub Pages:**
-   - Go to your repo → Settings → Pages
-   - Source: "Deploy from a branch"
-   - Branch: `gh-pages` / `/ (root)`
-   - Save
+## Getting Started
 
-6. **Wait 1-2 minutes**, then visit `https://YOUR_USERNAME.github.io/pay-comparison/`
+### Installation
 
-### Updating
+```bash
+git clone https://github.com/danielcregg/pay-comparison.git
+cd pay-comparison
+npm install
+```
 
-After any changes:
+### Usage
+
+**Start the development server:**
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+**Update pay-scale data from TUI.ie:**
+
+```bash
+npm run update-payscales
+```
+
+**Deploy to GitHub Pages:**
+
 ```bash
 npm run deploy
 ```
 
-That's it — it rebuilds and pushes automatically.
+The live site will be available at [https://danielcregg.github.io/pay-comparison/](https://danielcregg.github.io/pay-comparison/).
 
-## Local development
+## Tech Stack
 
-```bash
-npm install
-npm run dev
-```
+- **Framework:** [React](https://react.dev/) 19
+- **Build Tool:** [Vite](https://vitejs.dev/) 7
+- **Rendering:** HTML5 Canvas (accumulation chart)
+- **Data Source:** [TUI.ie salary scales](https://www.tui.ie/third-level-pay-pensions/third-level-salary-scales-.2167.html)
+- **Deployment:** GitHub Pages via `gh-pages`
+- **Linting:** ESLint with React hooks and refresh plugins
 
-Opens at `http://localhost:5173`
+## License
+
+This project is licensed under the [MIT License](LICENSE).
